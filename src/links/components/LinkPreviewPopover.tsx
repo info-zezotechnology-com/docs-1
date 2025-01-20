@@ -31,8 +31,12 @@ let currentlyOpen: HTMLLinkElement | null = null
 // inserted into the visible DOM. So before that, as a `div` element,
 // its `offsetHeight` and `.getBoundingClientRect().height` are always 0.
 // We *could* "change our mind" and wait till it's been inserted and then
-// change accoding to the popover's true height. But this can cause a flicker.
+// change according to the popover's true height. But this can cause a flicker.
 const BOUNDING_TOP_MARGIN = 300
+
+// used to identify the first focusable element in the hover card
+const FIRST_LINK_ID = '_hc_first_focusable'
+const TITLE_ID = '_hc_title'
 
 type Info = {
   product: string
@@ -45,7 +49,7 @@ type APIInfo = {
 }
 
 function getOrCreatePopoverGlobal() {
-  let popoverGlobal = document.querySelector('div.Popover') as HTMLDivElement | null
+  let popoverGlobal = document.querySelector<HTMLDivElement>('div.Popover')
   if (!popoverGlobal) {
     const wrapper = document.createElement('div')
     wrapper.setAttribute('data-testid', 'popover')
@@ -53,6 +57,22 @@ function getOrCreatePopoverGlobal() {
     wrapper.style.display = 'none'
     wrapper.style.outline = 'none'
     wrapper.style.zIndex = `100`
+
+    // Semantics for the hovercard so SR users are aware they're about to be
+    // focus trapped
+    wrapper.setAttribute('role', 'region')
+    wrapper.setAttribute('aria-modal', 'true')
+    wrapper.setAttribute('aria-label', 'user hovercard')
+    wrapper.setAttribute('aria-labelledby', TITLE_ID)
+
+    // this extra element and its event listener are used to help us direct
+    // where focus should go when entering a hover card; see `bottomBumper` for
+    // its counterpart
+    const topBumper = document.createElement('span')
+    topBumper.setAttribute('tabindex', '0')
+    topBumper.setAttribute('aria-hidden', 'true')
+    wrapper.appendChild(topBumper)
+
     const inner = document.createElement('div')
     // Note that this is lacking the 'Popover-message--bottom-left'
     // or 'Popover-message--top-right`. These get set later when we
@@ -62,16 +82,30 @@ function getOrCreatePopoverGlobal() {
     )
     inner.style.width = `360px`
 
-    const product = document.createElement('p')
+    const product = document.createElement('h3')
     product.classList.add('product')
     product.classList.add('f6')
     product.classList.add('color-fg-muted')
-    inner.appendChild(product)
+
+    const headingLink = document.createElement('a')
+    headingLink.style.textDecoration = 'underline'
+    headingLink.href = ''
+    // the id is necessary since we're intercepting natural focus order,
+    // so when focus enters the topBumper, we'll manually move it to the link
+    headingLink.id = FIRST_LINK_ID
+    product.appendChild(headingLink)
+
     inner.appendChild(product)
 
     const title = document.createElement('h4')
+    title.classList.add('title')
     title.classList.add('h5')
     title.classList.add('my-1')
+    const titleLink = document.createElement('a')
+    titleLink.href = ''
+    titleLink.id = TITLE_ID
+
+    title.appendChild(titleLink)
     inner.appendChild(title)
 
     const intro = document.createElement('p')
@@ -88,6 +122,15 @@ function getOrCreatePopoverGlobal() {
     inner.appendChild(anchor)
 
     wrapper.appendChild(inner)
+
+    // this extra element and its event listener are used to help us direct
+    // where focus should go when reaching the end of a hover card;
+    // see `topBumper` for its counterpart
+    const bottomBumper = document.createElement('span')
+    bottomBumper.setAttribute('aria-hidden', 'true')
+    bottomBumper.setAttribute('tabindex', '0')
+    wrapper.appendChild(bottomBumper)
+
     document.body.appendChild(wrapper)
 
     wrapper.addEventListener('mouseover', () => {
@@ -108,11 +151,48 @@ function getOrCreatePopoverGlobal() {
     })
 
     popoverGlobal = wrapper
+
+    // The top bumper simply moves focus into either:
+    // (a) the first focusable element in the hover card, or
+    // (b) if traversing in reverse, the last focusable element
+    topBumper.addEventListener('keyup', (event) => {
+      if (event.key === 'Tab' && event.shiftKey) titleLink.focus()
+      else if (event.key === 'Tab') headingLink.focus()
+    })
+
+    // The bottom bumper is more complex and handled via handleBottomBumper()
+    bottomBumper.addEventListener('keyup', (event) => {
+      handleBottomBumper(titleLink, headingLink, event)
+    })
+    bottomBumper.addEventListener('focus', () => {
+      handleBottomBumper(headingLink)
+    })
   }
+
+  // When the bottom bumper receives focus, it could be via one of two events:
+  // (a) a keyboard event, or (b) a focus event. This function essentially
+  // "de-bounces" the resulting behavior.
+  function handleBottomBumper(
+    primaryFocus: HTMLAnchorElement,
+    loopAroundFocus?: HTMLAnchorElement,
+    event?: KeyboardEvent,
+  ) {
+    // If we got here via keyboard events, we just need to determine if we
+    // should loops around to the top of the hover card or traverse in reverse
+    // the final part of the conditional essentially defaults the focus
+    if (event && event.key === 'Tab' && event.shiftKey) {
+      primaryFocus.focus()
+    } else if (event && event.key === 'Tab' && loopAroundFocus) {
+      loopAroundFocus.focus()
+    } else if (!event) {
+      primaryFocus.focus()
+    }
+  }
+
   return popoverGlobal
 }
 
-function popoverWrap(element: HTMLLinkElement) {
+function popoverWrap(element: HTMLLinkElement, filledCallback?: (popover: HTMLDivElement) => void) {
   if (element.parentElement && element.parentElement.classList.contains('Popover')) {
     return
   }
@@ -130,7 +210,12 @@ function popoverWrap(element: HTMLLinkElement) {
     element.href.startsWith(`${window.location.href.split('#')[0]}#`)
   ) {
     const domID = element.href.split('#')[1]
-    const domElement = document.querySelector(`#${domID}`)
+    // The reason we're using `getElementById(...)` instead of
+    // `querySelector(#...)` is because `getElementById(...)` will not
+    // throw a DOMException if the ID starts with a number.
+    // For example, `document.getElementById('123-thing')` will work, but
+    // `document.querySelector('#123-thing')` will throw a DOMException.
+    const domElement = document.getElementById(domID)
     if (domElement && domElement.textContent) {
       anchor = domElement.textContent
       // Headings will have the `#` character to the right which is to
@@ -158,7 +243,7 @@ function popoverWrap(element: HTMLLinkElement) {
     }
 
     if (title) {
-      fillPopover(element, { product, title, intro, anchor })
+      fillPopover(element, { product, title, intro, anchor }, filledCallback)
     }
     return
   }
@@ -168,25 +253,44 @@ function popoverWrap(element: HTMLLinkElement) {
   fetch(`/api/pageinfo/v1?${new URLSearchParams({ pathname })}`).then(async (response) => {
     if (response.ok) {
       const { info } = (await response.json()) as APIInfo
-      fillPopover(element, info)
+      fillPopover(element, info, filledCallback)
     }
   })
 }
 
-function fillPopover(element: HTMLLinkElement, info: Info) {
+function fillPopover(
+  element: HTMLLinkElement,
+  info: Info,
+  callback?: (popover: HTMLDivElement) => void,
+) {
   const { product, title, intro, anchor } = info
   const popover = getOrCreatePopoverGlobal()
-  const productHead = popover.querySelector('p.product') as HTMLParagraphElement | null
+
+  const productHead = popover.querySelector('.product') as HTMLHeadingElement | null
   if (productHead) {
+    const productHeadLink = productHead.querySelector('.product a') as HTMLLinkElement | null
     if (product) {
-      productHead.textContent = product
-      productHead.style.display = 'block'
+      if (productHeadLink) {
+        productHeadLink.textContent = product
+        const linkURL = new URL(element.href)
+        // All a.href attributes are always full absolute URLs, as a string.
+        // We assume that the "product landing page" is the first
+        // portion of all links.
+        const regex = /^\/(?<lang>\w{2}\/)?(?<version>[\w-]+@[\w-.]+\/)?(?<product>[\w-]+\/)?/
+        const match = regex.exec(linkURL.pathname)
+        if (match?.groups) {
+          const { lang, version, product } = match.groups
+          const productURL = [lang, version, product].map((n) => n || '').join('')
+          productHeadLink.href = `${linkURL.origin}/${productURL}`
+        }
+        productHead.style.display = 'block'
+      }
     } else {
       productHead.style.display = 'none'
     }
   }
 
-  const anchorElement = popover.querySelector('p.anchor') as HTMLParagraphElement | null
+  const anchorElement = popover.querySelector('.anchor') as HTMLParagraphElement | null
   if (anchorElement) {
     if (anchor) {
       anchorElement.textContent = anchor
@@ -200,8 +304,14 @@ function fillPopover(element: HTMLLinkElement, info: Info) {
     window.clearTimeout(popoverCloseTimer)
   }
 
-  const header = popover.querySelector('h4')
-  if (header) header.textContent = title
+  const titleHead = popover.querySelector('.title')
+  if (titleHead) {
+    const titleHeadLink = titleHead.querySelector('a') as HTMLLinkElement | null
+    if (titleHeadLink) {
+      titleHeadLink.href = element.href
+      titleHeadLink.textContent = title
+    }
+  }
 
   const paragraph: HTMLParagraphElement | null = popover.querySelector('p.intro')
   if (paragraph) {
@@ -251,6 +361,12 @@ function fillPopover(element: HTMLLinkElement, info: Info) {
   } else {
     popover.style.top = `${top - popover.offsetHeight - 10}px`
   }
+
+  popover.style.setProperty('top', popover.style.top, 'important')
+
+  if (callback) {
+    callback(popover)
+  }
 }
 
 // The top/left offset of an element is only relative to its parent.
@@ -281,7 +397,7 @@ function getBoundingOffset(element: HTMLElement) {
   return [top, left]
 }
 
-function popoverShow(target: HTMLLinkElement) {
+function popoverShow(target: HTMLLinkElement, callback?: (popover: HTMLDivElement) => void) {
   if (popoverStartTimer) {
     window.clearTimeout(popoverStartTimer)
   }
@@ -295,10 +411,10 @@ function popoverShow(target: HTMLLinkElement) {
   // open, which happens when you hover over the popover and back again
   // to the link, then we don't want any delay.
   if (target === currentlyOpen) {
-    popoverWrap(target)
+    popoverWrap(target, callback)
   } else {
     popoverStartTimer = window.setTimeout(() => {
-      popoverWrap(target)
+      popoverWrap(target, callback)
       currentlyOpen = target
     }, DELAY_SHOW)
   }
@@ -323,22 +439,74 @@ function popoverHide() {
   }, DELAY_HIDE)
 }
 
+let lastFocussedLink: HTMLLinkElement | null = null
+
 export function LinkPreviewPopover() {
+  // This is to track if the user entirely tabs out of the window.
+  // For example if they go to the address bar.
+  useEffect(() => {
+    function windowBlur() {
+      popoverHide()
+    }
+    window.addEventListener('blur', windowBlur)
+    return () => {
+      window.removeEventListener('blur', windowBlur)
+    }
+  }, [])
+
   useEffect(() => {
     function showPopover(event: MouseEvent) {
-      // If the current window is too narrow, the popover is not useful.
-      // Since this is tested on every event callback here in the handler,
-      // if the window width has changed since the mount, the number
-      // will change accordingly.
-      if (window.innerWidth < 767) {
-        return
-      }
       const target = event.currentTarget as HTMLLinkElement
       popoverShow(target)
+
+      // Just in case you *had* used the keyboard shortcut, but now
+      // hovered over something else, reset the last focussed link.
+      lastFocussedLink = null
     }
 
     function hidePopover() {
       popoverHide()
+    }
+
+    function keyboardHandler(event: KeyboardEvent) {
+      if (event.key === 'ArrowUp' && event.altKey) {
+        event.preventDefault()
+        const target = event.currentTarget as HTMLLinkElement
+        popoverShow(target, (popover) => {
+          const productHeadingLink = popover.querySelector<HTMLParagraphElement>('.product a')
+          const first = document.getElementById(FIRST_LINK_ID)
+
+          if (productHeadingLink && first) {
+            first.focus()
+            lastFocussedLink = target
+          }
+        })
+      } else if (event.key === 'ArrowDown' && event.altKey) {
+        event.preventDefault()
+        popoverHide()
+      }
+    }
+
+    // Note, this is attached, as an event listener, to the `document`
+    // meaning an Escape event here could be for anything.
+    // But the `popoverHide` function is cheap to call. If the popover
+    // was visible, it's hidden now. If it wasn't visible, nothing happens.
+    // Because we do other things on Escape, we have to make sure that
+    // this Escape was for closing a currently open popover.
+    function escapeHandler(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        const popover = getOrCreatePopoverGlobal()
+        if (popover.style.display !== 'none') {
+          popoverHide()
+
+          // If this is true, the keyboard shortcut was used to open
+          // the popover when the link (that can have a popover)
+          // was used. So upon, Escape go back to focussing on that link.
+          if (lastFocussedLink) {
+            lastFocussedLink.focus()
+          }
+        }
+      }
     }
 
     const links = Array.from(
@@ -376,13 +544,18 @@ export function LinkPreviewPopover() {
     for (const link of links) {
       link.addEventListener('mouseover', showPopover)
       link.addEventListener('mouseout', hidePopover)
+      link.addEventListener('keydown', keyboardHandler)
     }
+
+    document.addEventListener('keydown', escapeHandler)
 
     return () => {
       for (const link of links) {
         link.removeEventListener('mouseover', showPopover)
         link.removeEventListener('mouseout', hidePopover)
+        link.removeEventListener('keydown', keyboardHandler)
       }
+      document.removeEventListener('keydown', escapeHandler)
     }
   }) // Note that this runs on every single mount
 

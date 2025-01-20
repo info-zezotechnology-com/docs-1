@@ -4,7 +4,6 @@ intro: Learn how to test your webhooks and troubleshoot problems.
 versions:
   fpt: '*'
   ghes: '*'
-  ghae: '*'
   ghec: '*'
 topics:
   - Webhooks
@@ -12,6 +11,7 @@ children:
   - /viewing-webhook-deliveries
   - /redelivering-webhooks
   - /testing-webhooks
-  - /receiving-webhooks-with-the-github-cli
+  - /troubleshooting-webhooks
+  - /using-the-github-cli-to-forward-webhooks-for-testing
 ---
 

@@ -1,13 +1,12 @@
 ---
 title: Troubleshooting SSH
-intro: 'When using SSH to connect and authenticate to {% data variables.product.product_name %}, you may need to troubleshoot unexpected issues that may arise.'
+intro: 'When using SSH to connect and authenticate to {% data variables.product.github %}, you may need to troubleshoot unexpected issues that may arise.'
 redirect_from:
   - /articles/troubleshooting-ssh
   - /github/authenticating-to-github/troubleshooting-ssh
 versions:
   fpt: '*'
   ghes: '*'
-  ghae: '*'
   ghec: '*'
 topics:
   - SSH
@@ -22,9 +21,8 @@ children:
   - /error-permission-to-userrepo-denied-to-other-user
   - /error-permission-to-userrepo-denied-to-userother-repo
   - /error-agent-admitted-failure-to-sign
-  - /error-ssh-add-illegal-option----k
+  - /error-ssh-add-illegal-option----apple-use-keychain
   - /error-ssl-certificate-problem-verify-that-the-ca-cert-is-ok
   - /error-unknown-key-type
   - /error-were-doing-an-ssh-key-audit
 ---
-

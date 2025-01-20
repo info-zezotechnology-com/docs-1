@@ -1,12 +1,11 @@
 ---
 title: early-access secret
-descriptions: Early-Access secret
-redirect_from: 
+descriptions: Early-Access early-Access secret
+redirect_from:
   - /early-access/secret
 versions:
   fpt: '*'
   ghes: '*'
-  ghae: '*'
   ghec: '*'
 ---
 

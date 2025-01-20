@@ -1,8 +1,17 @@
-import { addError } from 'markdownlint-rule-helpers'
+import { addError, filterTokens } from 'markdownlint-rule-helpers'
+import matter from 'gray-matter'
 
 // Adds an error object with details conditionally via the onError callback
 export function addFixErrorDetail(onError, lineNumber, expected, actual, range, fixInfo) {
   addError(onError, lineNumber, `Expected: ${expected}`, ` Actual: ${actual}`, range, fixInfo)
+}
+
+export function forEachInlineChild(params, type, handler) {
+  filterTokens(params, 'inline', (token) => {
+    for (const child of token.children.filter((c) => c.type === type)) {
+      handler(child, token)
+    }
+  })
 }
 
 export function getRange(line, content) {
@@ -41,6 +50,11 @@ export function doesStringEndWithPeriod(text) {
   return /^.*\.['"]?$/.test(text)
 }
 
+export function quotePrecedesLinkOpen(text) {
+  if (!text) return false
+  return text.endsWith('"') || text.endsWith("'")
+}
+
 // Filters a list of tokens by token type only when they match
 // a specific token type order.
 // For example, if a list of tokens contains:
@@ -62,7 +76,7 @@ export function doesStringEndWithPeriod(text) {
 //      'inline'
 //    ]
 //
-// Then the return value would be the items that match that seaquence:
+// Then the return value would be the items that match that sequence:
 // Index 2-4:
 //   [
 //      { type: 'inline'},            <-- Index 0 - NOT INCLUDED
@@ -105,3 +119,17 @@ export function filterTokensByOrder(tokens, tokenOrder) {
 }
 
 export const docsDomains = ['docs.github.com', 'help.github.com', 'developer.github.com']
+
+// Lines is an array of strings read from a
+// Markdown file a split around new lines.
+// This is the format we get from Markdownlint.
+// Returns null if the lines do not contain
+// frontmatter properties.
+export function getFrontmatter(lines) {
+  const fmString = lines.join('\n')
+  const { data } = matter(fmString)
+  // If there is no frontmatter or the frontmatter contains
+  // no keys, matter will return an empty object.
+  if (Object.keys(data).length === 0) return null
+  return data
+}

@@ -1,9 +1,7 @@
-import { jest } from '@jest/globals'
+import { describe, expect, test } from 'vitest'
 
 import { runRule } from '../../lib/init-test.js'
 import { internalLinksSlash } from '../../lib/linting-rules/internal-links-slash.js'
-
-jest.setTimeout(60 * 1000)
 
 describe(internalLinksSlash.names.join(' - '), () => {
   test('relative links that do not start with / fail', async () => {
